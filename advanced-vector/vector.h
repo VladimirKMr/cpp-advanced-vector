@@ -222,33 +222,12 @@ public:
         }
     }
 
+    // реализация EmplaceBack на основе Emplace
+    // при добавлении этого метода не проходит тесты в тренажере (Вы неверно реализовали метод EmplaceBack)
+    // прошу сообщить в чем ошибка, или тесты на это не расчитаны? 
     template <typename... Args>
     T& EmplaceBack(Args&&... args) {
-        size_t new_capacity(size_ == 0 ? 1 : size_ * 2);
-        T* value = nullptr;
-
-        if (size_ == Capacity()) {
-            RawMemory<T> new_data(new_capacity);
-            value = new (new_data + size_) T(std::forward<Args>(args)...);
-
-            if constexpr (std::is_nothrow_move_constructible_v<T> || !std::is_copy_constructible_v<T>) {
-                std::uninitialized_move_n(data_.GetAddress(), size_, new_data.GetAddress());
-            } else {
-                try {
-                    std::uninitialized_copy_n(data_.GetAddress(), size_, new_data.GetAddress());
-                } catch (...) {
-                    std::destroy_at(new_data.GetAddress() + size_ - 1);
-                    throw;
-                }
-            }
-            
-            std::destroy_n(data_.GetAddress(), size_);
-            data_.Swap(new_data);
-        } else {
-            value = new (data_ + size_) T(std::forward<Args>(args)...);
-        }
-        ++size_;
-
+        T* value = Emplace(end(), std::forward<Args>(args)...);
         return *value;
     }
 
@@ -257,8 +236,16 @@ public:
         EmplaceBack(std::forward<Type>(value));
     }
 
+    // реализация PushBack c константной ссылкой, пробовал по разному, но 
+    // при добавлении этого метода не проходит тесты в тренажере (Вы неверно реализовали метод PushBack)
+    // прошу сообщить в чем ошибка, или тесты на это не расчитаны? 
+    void PushBack(const T& value) {
+        EmplaceBack(value);
+    }
+
     template <typename... Args>
     iterator Emplace(const_iterator pos, Args&& ...args) {
+        assert(pos >= begin() && pos <= end());
         size_t new_capacity(size_ == 0 ? 1 : size_ * 2);
         size_t pos_num = pos - begin();
         iterator value = nullptr;
@@ -267,19 +254,7 @@ public:
             RawMemory<T> new_data(new_capacity);
             value = new (new_data + pos_num) T(std::forward<Args>(args)...);
 
-            if constexpr (std::is_nothrow_move_constructible_v<T> || !std::is_copy_constructible_v<T>) {
-                std::uninitialized_move_n(begin(), pos_num, new_data.GetAddress());
-                std::uninitialized_move_n(begin() + pos_num, size_ - pos_num, new_data.GetAddress() + pos_num + 1);
-            } else {
-                try {
-                    std::uninitialized_copy_n(begin(), pos_num, new_data.GetAddress());
-                    std::uninitialized_copy_n(begin() + pos_num, size_ - pos_num, new_data.GetAddress() + pos_num + 1);
-                }
-                catch (...) {
-                    std::destroy_at(new_data.GetAddress() + pos_num);
-                    throw;
-                }
-            }
+            ReAllocate(pos_num, new_data);
 
             std::destroy_n(begin(), size_);
             data_.Swap(new_data);
@@ -304,15 +279,37 @@ public:
     }
 
     iterator Erase(const_iterator pos) {
+        assert(pos >= begin() && pos < end());
         size_t pos_num = pos - begin();
         std::move(begin() + pos_num + 1, end(), begin() + pos_num);
         PopBack();
         return begin() + pos_num;
     }
 
-    template <typename Type>
-    iterator Insert(const_iterator pos, Type&& value) {
-        return Emplace(pos, std::forward<Type>(value));
+    iterator Insert(const_iterator pos, T&& value) {
+        return Emplace(pos, std::move(value));
+    }
+
+    // реализация для ссылки
+    iterator Insert(const_iterator pos, const T& value) {
+        return Emplace(pos, value);
+    }
+
+private:
+    void ReAllocate(size_t pos_num, RawMemory<T>& new_data) {
+        if constexpr (std::is_nothrow_move_constructible_v<T> || !std::is_copy_constructible_v<T>) {
+                std::uninitialized_move_n(begin(), pos_num, new_data.GetAddress());
+                std::uninitialized_move_n(begin() + pos_num, size_ - pos_num, new_data.GetAddress() + pos_num + 1);
+            } else {
+                try {
+                    std::uninitialized_copy_n(begin(), pos_num, new_data.GetAddress());
+                    std::uninitialized_copy_n(begin() + pos_num, size_ - pos_num, new_data.GetAddress() + pos_num + 1);
+                }
+                catch (...) {
+                    std::destroy_at(new_data.GetAddress() + pos_num);
+                    throw;
+                }
+            }
     }
 
 private:
